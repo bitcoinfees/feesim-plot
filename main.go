@@ -1,12 +1,12 @@
 package main
 
 import (
-	"strings"
 	"bytes"
 	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	//"github.com/bitcoinfees/feesim/api"
@@ -16,13 +16,14 @@ import (
 type mainPlot struct {
 	res, length int64 // in seconds
 	rrdfile, cf string
+
+	data  [][]float64
+	names []string
 }
 
-func (p mainPlot) Fetch(t int64) (mainPlotResult, error) {
-	r := mainPlotResult{data: make([][]float64, 12), names: make([]string, 12)}
-
+func (p *mainPlot) Fetch(t int64) error {
 	if p.length%p.res != 0 {
-		return r, errors.New("res must divide length.")
+		return errors.New("res must divide length.")
 	}
 
 	end := time.Unix(t-(t%p.res), 0)
@@ -32,55 +33,46 @@ func (p mainPlot) Fetch(t int64) (mainPlotResult, error) {
 
 	f, err := rrd.Fetch(p.rrdfile, p.cf, start, end, res)
 	if err != nil {
-		return r, err
+		return err
 	}
 
 	n := p.length / p.res
 	if int(n) != f.RowCnt-2 {
-		panic("Row number mismatch.")
+		return errors.New("Row number mismatch.")
 	}
 	if len(f.DsNames) != 11 {
-		panic("Col number mismatch.")
+		return errors.New("Col number mismatch.")
 	}
-	for i, name := range f.DsNames {
-		r.data[i+1] = make([]float64, n)
-		r.names[i+1] = name
-		for j := range r.data[i+1] {
-			r.data[i+1][j] = f.ValueAt(i, j)
+
+	p.data = make([][]float64, n)
+	ti := start.Unix() + p.res
+	for i := range p.data {
+		p.data[i] = make([]float64, 12)
+		for j := range p.data[i] {
+			if j == 0 {
+				p.data[i][j] = float64(ti)
+				ti += p.res
+				continue
+			}
+			p.data[i][j] = f.ValueAt(j-1, i)
 		}
 	}
-	ti := start.Unix() + p.res
-	r.data[0] = make([]float64, n)
-	r.names[0] = "time"
-	for j := range r.data[0] {
-		r.data[0][j] = float64(ti)
-		ti += p.res
+	p.names = append([]string{"time"}, f.DsNames...)
+	return nil
+}
+
+func (p *mainPlot) MarshalText() ([]byte, error) {
+	if p.data == nil {
+		return nil, errors.New("Data not yet fetched.")
 	}
-	return r, nil
-}
-
-type mainPlotResult struct {
-	data [][]float64
-	names []string
-}
-
-func (r mainPlotResult) MarshalText() ([]byte, error) {
 	buf := new(bytes.Buffer)
-	fmt.Fprintln(buf, strings.Join(r.names, ","))
-	for i, t := range r.data[0] {
-		fmt.Fprintf(buf, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f\n",
-			int(t),
-			int(r.data[1][i]),
-			int(r.data[2][i]),
-			int(r.data[3][i]),
-			int(r.data[4][i]),
-			int(r.data[5][i]),
-			int(r.data[6][i]),
-			int(r.data[7][i]),
-			int(r.data[8][i]),
-			int(r.data[9][i]),
-			r.data[10][i],
-			r.data[11][i])
+	fmt.Fprintln(buf, strings.Join(p.names, ","))
+	for _, row := range p.data {
+		irow := make([]interface{}, len(row))
+		for i, el := range row {
+			irow[i] = el
+		}
+		fmt.Fprintf(buf, "%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%f,%f\n", irow...)
 	}
 	return buf.Bytes(), nil
 }
@@ -94,16 +86,17 @@ func main() {
 	}
 
 	p := mainPlot{
-		res:     60*30,
-		length:  3600*3,
+		res:     60,
+		length:  600,
 		rrdfile: rrdfile,
 		cf:      "AVERAGE",
 	}
-	r, err := p.Fetch(time.Now().Unix())
+	if err := p.Fetch(time.Now().Unix()); err != nil {
+		log.Fatal(err)
+	}
+	s, err := p.MarshalText()
 	if err != nil {
 		log.Fatal(err)
 	}
-	s, _ := r.MarshalText()
 	fmt.Printf(string(s))
-
 }
