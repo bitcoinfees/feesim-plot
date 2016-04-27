@@ -52,7 +52,11 @@ func (p *profilePlot) Fetch(c *api.Client) error {
 	if r, err := c.EstimateFee(0); err != nil {
 		return err
 	} else {
-		result = r.([]float64)
+		rslice := r.([]interface{})
+		result = make([]float64, len(rslice))
+		for i, feerate := range rslice {
+			result[i] = feerate.(float64) * coin
+		}
 	}
 	// De-duplicate result feerates
 	conftimes := make(map[int]int)
@@ -65,11 +69,11 @@ func (p *profilePlot) Fetch(c *api.Client) error {
 		}
 	}
 	x := make([]int, 0, len(conftimes))
-	y := make([]int, 0, len(conftimes))
 	for feerate := range conftimes {
 		x = append(x, feerate)
 	}
 	sort.Ints(x)
+	y := make([]int, len(x))
 	for i, feerate := range x {
 		y[i] = conftimes[feerate]
 	}
@@ -89,8 +93,8 @@ func (p *profilePlot) CSV(subplot string) ([]byte, error) {
 	case "mempool":
 		x, y = p.mempool_x, p.mempool_y
 	case "conf":
-		x := make([]float64, len(p.conf_x))
-		y := make([]float64, len(p.conf_y))
+		x = make([]float64, len(p.conf_x))
+		y = make([]float64, len(p.conf_y))
 		for i := range x {
 			x[i], y[i] = float64(p.conf_x[i]), float64(p.conf_y[i])
 		}
@@ -98,7 +102,7 @@ func (p *profilePlot) CSV(subplot string) ([]byte, error) {
 		return nil, errors.New("Invalid subplot.")
 	}
 	if x == nil || y == nil {
-		return nil, errors.New("Data not yet fetched.")
+		return nil, errors.New("Data not yet fetched: " + subplot)
 	}
 
 	buf := new(bytes.Buffer)
@@ -107,6 +111,14 @@ func (p *profilePlot) CSV(subplot string) ([]byte, error) {
 		fmt.Fprintf(buf, "%.0f,%f\n", x[i], y[i])
 	}
 	return buf.Bytes(), nil
+}
+
+func newProfilePlot(c *api.Client) (*profilePlot, error) {
+	p := new(profilePlot)
+	if err := p.Fetch(c); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 type mainPlot struct {

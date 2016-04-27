@@ -1,11 +1,11 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 )
 
 const (
@@ -15,33 +15,64 @@ const (
 	res1440
 )
 
+const coin = 100000000
+
 type mainPlotter func(resnum int) error
-type profilePlotter func() error
-type miningPlotter func() error
 
 const usage = `
 feesim-plot [global options] COMMAND [args...]
 
 Commands:
-	main RESNUMBER
+	main -f RRDFILE -n RESNUMBER
+	profile [-host HOST] [-port PORT]
 
 `
 
+func doMain(args []string, bin, spreadsheet, auth string) error {
+	var (
+		rrdfile   string
+		resnumber int
+	)
+	f := flag.NewFlagSet(args[0], flag.ExitOnError)
+	f.StringVar(&rrdfile, "f", "", "Path to RRD file.")
+	f.IntVar(&resnumber, "n", -1, "Res number, 0-3")
+	if err := f.Parse(args[1:]); err != nil {
+		return err
+	}
+	if rrdfile == "" || resnumber == -1 {
+		return errors.New("Insufficient args.")
+	}
+	plotMain := gspreadMainPlotter(rrdfile, bin, spreadsheet, auth)
+	return plotMain(resnumber)
+}
+
+func doProfile(args []string, bin, spreadsheet, auth string) error {
+	var (
+		host, port string
+	)
+	f := flag.NewFlagSet(args[0], flag.ExitOnError)
+	f.StringVar(&host, "host", "localhost", "api host")
+	f.StringVar(&port, "port", "8350", "api port")
+	if err := f.Parse(args[1:]); err != nil {
+		return err
+	}
+	plotProfile := gspreadProfilePlotter(host, port, bin, spreadsheet, auth)
+	return plotProfile()
+}
+
 func main() {
 	var (
-		rrdfile     string
 		bin         string
 		spreadsheet string
 		auth        string
 		logfile     string
 	)
-	flag.StringVar(&rrdfile, "f", "", "Path to RRD file.")
 	flag.StringVar(&bin, "b", "", "path to putsheet binary")
 	flag.StringVar(&spreadsheet, "s", "", "spreadsheet name")
 	flag.StringVar(&auth, "a", "", "path to gspread json auth token")
 	flag.StringVar(&logfile, "l", "", "path to logfile")
 	flag.Parse()
-	if rrdfile == "" || bin == "" || spreadsheet == "" || auth == "" {
+	if bin == "" || spreadsheet == "" || auth == "" {
 		fmt.Fprintf(os.Stderr, usage)
 		flag.CommandLine.PrintDefaults()
 		log.Fatal("Insufficient arguments.")
@@ -59,19 +90,14 @@ func main() {
 		}
 	}
 
-	plotMain := gspreadMainPlotter(rrdfile, bin, spreadsheet, auth)
-
 	switch flag.Arg(0) {
 	case "main":
-		if flag.Arg(1) == "" {
-			logger.Fatal("Invalid res number.")
+		if err := doMain(flag.Args(), bin, spreadsheet, auth); err != nil {
+			logger.Fatal(err)
 		}
-		resnum, err := strconv.Atoi(flag.Arg(1))
-		if err != nil {
-			logger.Fatal("Invalid res num:", err)
-		}
-		if err := plotMain(resnum); err != nil {
-			logger.Fatal("plotMain error:", err)
+	case "profile":
+		if err := doProfile(flag.Args(), bin, spreadsheet, auth); err != nil {
+			logger.Fatal(err)
 		}
 	default:
 		logger.Fatal("Invalid command.")
