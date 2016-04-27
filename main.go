@@ -1,102 +1,79 @@
 package main
 
 import (
-	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
-	"strings"
-	"time"
-
-	//"github.com/bitcoinfees/feesim/api"
-	"github.com/ziutek/rrd"
+	"os"
+	"strconv"
 )
 
-type mainPlot struct {
-	res, length int64 // in seconds
-	rrdfile, cf string
+const (
+	res1 = iota
+	res30
+	res180
+	res1440
+)
 
-	data  [][]float64
-	names []string
-}
+type mainPlotter func(resnum int) error
+type profilePlotter func() error
+type miningPlotter func() error
 
-func (p *mainPlot) Fetch(t int64) error {
-	if p.length%p.res != 0 {
-		return errors.New("res must divide length.")
-	}
+const usage = `
+feesim-plot [global options] COMMAND [args...]
 
-	end := time.Unix(t-(t%p.res), 0)
-	length := time.Duration(p.length) * time.Second
-	start := end.Add(-length)
-	res := time.Duration(p.res) * time.Second
+Commands:
+	main RESNUMBER
 
-	f, err := rrd.Fetch(p.rrdfile, p.cf, start, end, res)
-	if err != nil {
-		return err
-	}
-
-	n := p.length / p.res
-	if int(n) != f.RowCnt-2 {
-		return errors.New("Row number mismatch.")
-	}
-	if len(f.DsNames) != 11 {
-		return errors.New("Col number mismatch.")
-	}
-
-	p.data = make([][]float64, n)
-	ti := start.Unix() + p.res
-	for i := range p.data {
-		p.data[i] = make([]float64, 12)
-		for j := range p.data[i] {
-			if j == 0 {
-				p.data[i][j] = float64(ti)
-				ti += p.res
-				continue
-			}
-			p.data[i][j] = f.ValueAt(j-1, i)
-		}
-	}
-	p.names = append([]string{"time"}, f.DsNames...)
-	return nil
-}
-
-func (p *mainPlot) MarshalText() ([]byte, error) {
-	if p.data == nil {
-		return nil, errors.New("Data not yet fetched.")
-	}
-	buf := new(bytes.Buffer)
-	fmt.Fprintln(buf, strings.Join(p.names, ","))
-	for _, row := range p.data {
-		irow := make([]interface{}, len(row))
-		for i, el := range row {
-			irow[i] = el
-		}
-		fmt.Fprintf(buf, "%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%f,%f\n", irow...)
-	}
-	return buf.Bytes(), nil
-}
+`
 
 func main() {
-	var rrdfile string
+	var (
+		rrdfile     string
+		bin         string
+		spreadsheet string
+		auth        string
+		logfile     string
+	)
 	flag.StringVar(&rrdfile, "f", "", "Path to RRD file.")
+	flag.StringVar(&bin, "b", "", "path to putsheet binary")
+	flag.StringVar(&spreadsheet, "s", "", "spreadsheet name")
+	flag.StringVar(&auth, "a", "", "path to gspread json auth token")
+	flag.StringVar(&logfile, "l", "", "path to logfile")
 	flag.Parse()
-	if rrdfile == "" {
-		log.Fatal("Must specify RRD file with -f.")
+	if rrdfile == "" || bin == "" || spreadsheet == "" || auth == "" {
+		fmt.Fprintf(os.Stderr, usage)
+		flag.CommandLine.PrintDefaults()
+		log.Fatal("Insufficient arguments.")
 	}
 
-	p := mainPlot{
-		res:     60,
-		length:  600,
-		rrdfile: rrdfile,
-		cf:      "AVERAGE",
+	var logger *log.Logger
+	if logfile == "" {
+		logger = log.New(os.Stderr, "", log.LstdFlags)
+	} else {
+		logFileMode := os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		if f, err := os.OpenFile(logfile, logFileMode, 0666); err != nil {
+			log.Fatal(err)
+		} else {
+			logger = log.New(f, "", log.LstdFlags)
+		}
 	}
-	if err := p.Fetch(time.Now().Unix()); err != nil {
-		log.Fatal(err)
+
+	plotMain := gspreadMainPlotter(rrdfile, bin, spreadsheet, auth)
+
+	switch flag.Arg(0) {
+	case "main":
+		if flag.Arg(1) == "" {
+			logger.Fatal("Invalid res number.")
+		}
+		resnum, err := strconv.Atoi(flag.Arg(1))
+		if err != nil {
+			logger.Fatal("Invalid res num:", err)
+		}
+		if err := plotMain(resnum); err != nil {
+			logger.Fatal("plotMain error:", err)
+		}
+	default:
+		logger.Fatal("Invalid command.")
 	}
-	s, err := p.MarshalText()
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf(string(s))
 }
