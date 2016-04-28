@@ -165,7 +165,12 @@ func (p *mainPlot) Fetch(t int64) error {
 			p.data[i][j] = f.ValueAt(j-1, i)
 		}
 	}
+	// Convert to bytes/decaminute for txbyterate and capbyterate
 	p.names = append([]string{"time"}, f.DsNames...)
+	for i := range p.data {
+		p.data[i][10] *= 600
+		p.data[i][11] *= 600
+	}
 	return nil
 }
 
