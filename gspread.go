@@ -145,3 +145,39 @@ func gspreadMiningPlotter(mfrCutoffProb float64, host, port, bin, spreadsheet, a
 	}
 	return plotMining
 }
+
+func gspreadPutScores(p *scoresPlot, bin, spreadsheet, auth string) error {
+	s, err := p.CSV()
+	if err != nil {
+		return err
+	}
+
+	errc := make(chan error)
+	putAsync := func(csv []byte, worksheet string) {
+		errc <- gspreadPutSheet(csv, bin, spreadsheet, worksheet, auth)
+	}
+
+	timestr := []byte(fmt.Sprintf("timestr\n%s\n", time.Now().UTC().Format(time.RFC822)))
+	go putAsync(s, "predictscores")
+	go putAsync(timestr, "predictscores_time")
+
+	var errGlobal error
+	for i := 0; i < 2; i++ {
+		if err := <-errc; err != nil {
+			errGlobal = err
+		}
+	}
+	return errGlobal
+}
+
+func gspreadScoresPlotter(host, port, bin, spreadsheet, auth string) func() error {
+	c := api.NewClient(api.Config{Host: host, Port: port, Timeout: 15})
+	plotScores := func() error {
+		p, err := newScoresPlot(c)
+		if err != nil {
+			return err
+		}
+		return gspreadPutScores(p, bin, spreadsheet, auth)
+	}
+	return plotScores
+}

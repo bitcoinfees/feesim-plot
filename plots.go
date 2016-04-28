@@ -12,6 +12,49 @@ import (
 	"github.com/ziutek/rrd"
 )
 
+type scoresPlot struct {
+	scores  []float64
+	txTotal []float64
+}
+
+func (p *scoresPlot) Fetch(c *api.Client) error {
+	s, err := c.Scores()
+	if err != nil {
+		return err
+	}
+
+	scores := make([]float64, len(s["attained"]))
+	txTotal := make([]float64, len(s["attained"]))
+	for i := range scores {
+		txTotal[i] = s["attained"][i] + s["exceeded"][i]
+		scores[i] = s["attained"][i] / txTotal[i]
+	}
+
+	p.scores = scores
+	p.txTotal = txTotal
+	return nil
+}
+
+func (p *scoresPlot) CSV() ([]byte, error) {
+	if p.scores == nil || p.txTotal == nil {
+		return nil, errors.New("Data not yet fetched.")
+	}
+	buf := new(bytes.Buffer)
+	fmt.Fprintln(buf, "conf,scores,txtotal")
+	for i, score := range p.scores {
+		fmt.Fprintf(buf, "%d,%f,%.0f\n", i+1, score, p.txTotal[i])
+	}
+	return buf.Bytes(), nil
+}
+
+func newScoresPlot(c *api.Client) (*scoresPlot, error) {
+	p := new(scoresPlot)
+	if err := p.Fetch(c); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
 type miningPlot struct {
 	mfr_x []float64
 	mfr_y []float64
@@ -32,6 +75,7 @@ func (p *miningPlot) Fetch(c *api.Client, mfrCutoffProb float64) error {
 	for _, feerate := range mfr {
 		f := feerate.(float64)
 		if f >= 0 {
+			// f == -1 means +Inf MFR
 			mfr_x = append(mfr_x, f)
 		}
 	}

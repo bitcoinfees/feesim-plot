@@ -26,6 +26,7 @@ Commands:
 	main -f RRDFILE -n RESNUMBER
 	profile [-host HOST] [-port PORT]
 	mining [-host HOST] [-port PORT]
+	predictscores [-host HOST] [-port PORT]
 
 `
 
@@ -77,6 +78,20 @@ func doMining(args []string, bin, spreadsheet, auth string) error {
 	return plotMining()
 }
 
+func doScores(args []string, bin, spreadsheet, auth string) error {
+	var (
+		host, port string
+	)
+	f := flag.NewFlagSet(args[0], flag.ExitOnError)
+	f.StringVar(&host, "host", "localhost", "api host")
+	f.StringVar(&port, "port", "8350", "api port")
+	if err := f.Parse(args[1:]); err != nil {
+		return err
+	}
+	plotScores := gspreadScoresPlotter(host, port, bin, spreadsheet, auth)
+	return plotScores()
+}
+
 func main() {
 	var (
 		bin         string
@@ -118,6 +133,10 @@ func main() {
 		}
 	case "mining":
 		if err := doMining(flag.Args(), bin, spreadsheet, auth); err != nil {
+			logger.Fatal(err)
+		}
+	case "predictscores":
+		if err := doScores(flag.Args(), bin, spreadsheet, auth); err != nil {
 			logger.Fatal(err)
 		}
 	default:
