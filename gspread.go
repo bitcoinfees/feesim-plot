@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os/exec"
 	"time"
 
@@ -74,13 +75,16 @@ func gspreadPutProfile(p *profilePlot, bin, spreadsheet, auth string) error {
 		errc <- gspreadPutSheet(csv, bin, spreadsheet, worksheet, auth)
 	}
 
+	timestr := []byte(fmt.Sprintf("timestr\n%s\n", time.Now().UTC().Format(time.RFC822)))
+
 	go putAsync(conf, "profile_conf")
 	go putAsync(txrate, "profile_txrate")
 	go putAsync(caprate, "profile_caprate")
 	go putAsync(mempool, "profile_mempool")
+	go putAsync(timestr, "profile_time")
 
 	var errGlobal error
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		if err := <-errc; err != nil {
 			errGlobal = err
 		}
@@ -98,4 +102,46 @@ func gspreadProfilePlotter(host, port, bin, spreadsheet, auth string) func() err
 		return gspreadPutProfile(p, bin, spreadsheet, auth)
 	}
 	return plotProfile
+}
+
+func gspreadPutMining(p *miningPlot, bin, spreadsheet, auth string) error {
+	mfr, err := p.CSV("mfr")
+	if err != nil {
+		return err
+	}
+	mbs, err := p.CSV("mbs")
+	if err != nil {
+		return err
+	}
+
+	errc := make(chan error)
+	putAsync := func(csv []byte, worksheet string) {
+		errc <- gspreadPutSheet(csv, bin, spreadsheet, worksheet, auth)
+	}
+
+	timestr := []byte(fmt.Sprintf("timestr\n%s\n", time.Now().UTC().Format(time.RFC822)))
+
+	go putAsync(mfr, "mining_mfr")
+	go putAsync(mbs, "mining_mbs")
+	go putAsync(timestr, "mining_time")
+
+	var errGlobal error
+	for i := 0; i < 3; i++ {
+		if err := <-errc; err != nil {
+			errGlobal = err
+		}
+	}
+	return errGlobal
+}
+
+func gspreadMiningPlotter(mfrCutoffProb float64, host, port, bin, spreadsheet, auth string) func() error {
+	c := api.NewClient(api.Config{Host: host, Port: port, Timeout: 15})
+	plotMining := func() error {
+		p, err := newMiningPlot(c, mfrCutoffProb)
+		if err != nil {
+			return err
+		}
+		return gspreadPutMining(p, bin, spreadsheet, auth)
+	}
+	return plotMining
 }

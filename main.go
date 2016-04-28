@@ -25,6 +25,7 @@ feesim-plot [global options] COMMAND [args...]
 Commands:
 	main -f RRDFILE -n RESNUMBER
 	profile [-host HOST] [-port PORT]
+	mining [-host HOST] [-port PORT]
 
 `
 
@@ -58,6 +59,22 @@ func doProfile(args []string, bin, spreadsheet, auth string) error {
 	}
 	plotProfile := gspreadProfilePlotter(host, port, bin, spreadsheet, auth)
 	return plotProfile()
+}
+
+func doMining(args []string, bin, spreadsheet, auth string) error {
+	var (
+		host, port    string
+		mfrCutoffProb float64
+	)
+	f := flag.NewFlagSet(args[0], flag.ExitOnError)
+	f.StringVar(&host, "host", "localhost", "api host")
+	f.StringVar(&port, "port", "8350", "api port")
+	f.Float64Var(&mfrCutoffProb, "c", 0.95, "MFR cutoff prob")
+	if err := f.Parse(args[1:]); err != nil {
+		return err
+	}
+	plotMining := gspreadMiningPlotter(mfrCutoffProb, host, port, bin, spreadsheet, auth)
+	return plotMining()
 }
 
 func main() {
@@ -97,6 +114,10 @@ func main() {
 		}
 	case "profile":
 		if err := doProfile(flag.Args(), bin, spreadsheet, auth); err != nil {
+			logger.Fatal(err)
+		}
+	case "mining":
+		if err := doMining(flag.Args(), bin, spreadsheet, auth); err != nil {
 			logger.Fatal(err)
 		}
 	default:

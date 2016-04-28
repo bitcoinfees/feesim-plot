@@ -12,6 +12,86 @@ import (
 	"github.com/ziutek/rrd"
 )
 
+type miningPlot struct {
+	mfr_x []float64
+	mfr_y []float64
+
+	mbs_x []float64
+	mbs_y []float64
+}
+
+func (p *miningPlot) Fetch(c *api.Client, mfrCutoffProb float64) error {
+	blksrc, err := c.BlockSource()
+	if err != nil {
+		return err
+	}
+
+	mfr := blksrc["minfeerates"].([]interface{})
+	mfrLen := len(mfr)
+	var mfr_x []float64
+	for _, feerate := range mfr {
+		f := feerate.(float64)
+		if f >= 0 {
+			mfr_x = append(mfr_x, f)
+		}
+	}
+	mfr_y := make([]float64, len(mfr_x))
+	for i := range mfr_y {
+		mfr_y[i] = float64(i) / float64(mfrLen)
+	}
+	if i := sort.SearchFloat64s(mfr_y, mfrCutoffProb); i < len(mfr_y) {
+		mfr_x = mfr_x[:i]
+		mfr_y = mfr_y[:i]
+	}
+
+	mbs := blksrc["maxblocksizes"].([]interface{})
+	mbsLen := len(mbs)
+	mbs_x := make([]float64, len(mbs))
+	for i, size := range mbs {
+		mbs_x[i] = size.(float64)
+	}
+	mbs_y := make([]float64, len(mbs_x))
+	for i := range mbs_y {
+		mbs_y[i] = float64(i) / float64(mbsLen)
+	}
+
+	p.mfr_x = mfr_x
+	p.mfr_y = mfr_y
+	p.mbs_x = mbs_x
+	p.mbs_y = mbs_y
+	return nil
+}
+
+func (p *miningPlot) CSV(subplot string) ([]byte, error) {
+	var x, y []float64
+	switch subplot {
+	case "mfr":
+		x, y = p.mfr_x, p.mfr_y
+	case "mbs":
+		x, y = p.mbs_x, p.mbs_y
+	default:
+		return nil, errors.New("Invalid subplot.")
+	}
+	if x == nil || y == nil {
+		return nil, errors.New("Data not yet fetched: " + subplot)
+	}
+
+	buf := new(bytes.Buffer)
+	fmt.Fprintln(buf, "x,y")
+	for i := range x {
+		fmt.Fprintf(buf, "%.0f,%f\n", x[i], y[i])
+	}
+	return buf.Bytes(), nil
+}
+
+func newMiningPlot(c *api.Client, mfrCutoffProb float64) (*miningPlot, error) {
+	p := new(miningPlot)
+	if err := p.Fetch(c, mfrCutoffProb); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
 type profilePlot struct {
 	txrate_x []float64
 	txrate_y []float64
@@ -27,21 +107,30 @@ type profilePlot struct {
 }
 
 func (p *profilePlot) Fetch(c *api.Client) error {
-	txrate, err := c.TxRate(50)
+	txrate, err := c.TxRate(20)
 	if err != nil {
 		return err
+	}
+	// Convert to bytes/decaminute
+	for i := range txrate["y"] {
+		txrate["y"][i] *= 600
 	}
 	p.txrate_x = txrate["x"]
 	p.txrate_y = txrate["y"]
 
-	caprate, err := c.CapRate(50)
+	caprate, err := c.CapRate(20)
 	if err != nil {
 		return err
 	}
-	p.caprate_x = caprate["x"]
-	p.caprate_y = caprate["y"]
+	// Convert to bytes/decaminute
+	for i := range caprate["y"] {
+		caprate["y"][i] *= 600
+	}
+	// Exclude outliers
+	p.caprate_x = caprate["x"][:len(caprate["x"])-1]
+	p.caprate_y = caprate["y"][:len(caprate["y"])-1]
 
-	mempool, err := c.MempoolSize(50)
+	mempool, err := c.MempoolSize(30)
 	if err != nil {
 		return err
 	}
