@@ -23,7 +23,7 @@ func gspreadPutSheet(csv []byte, bin, spreadsheet, worksheet, auth string) error
 	return cmd.Run()
 }
 
-func gspreadMainPlotter(rrdfile string, bin, spreadsheet, auth string) mainPlotter {
+func gspreadMainPlotter(rrdfile, bin, spreadsheet, auth string) mainPlotter {
 	plotMain := func(resnum int) error {
 		t := time.Now().Unix()
 		p, err := newMainPlot(t, rrdfile, resnum)
