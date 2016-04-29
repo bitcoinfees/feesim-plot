@@ -171,8 +171,8 @@ func (p *profilePlot) Fetch(c *api.Client) error {
 		caprate["y"][i] *= 600
 	}
 	// Exclude outliers
-	p.caprate_x = caprate["x"][:len(caprate["x"])-1]
-	p.caprate_y = caprate["y"][:len(caprate["y"])-1]
+	p.caprate_x = caprate["x"]
+	p.caprate_y = caprate["y"]
 
 	mempool, err := c.MempoolSize(30)
 	if err != nil {
