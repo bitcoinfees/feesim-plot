@@ -162,7 +162,7 @@ func (p *profilePlot) Fetch(c *api.Client) error {
 	p.txrate_x = txrate["x"]
 	p.txrate_y = txrate["y"]
 
-	caprate, err := c.CapRate(20)
+	caprate, err := c.CapRate(50)
 	if err != nil {
 		return err
 	}
