@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 
@@ -20,7 +21,22 @@ func gspreadPutSheet(csv []byte, bin, spreadsheet, worksheet, auth string) error
 		stdin.Close()
 	}()
 
-	return cmd.Run()
+	errc := make(chan error)
+	go func() { errc <- cmd.Run() }()
+	toSigInt := time.NewTimer(time.Minute * 2)
+	toSigKill := time.NewTimer(time.Minute * 3)
+	defer toSigInt.Stop()
+	defer toSigKill.Stop()
+	for {
+		select {
+		case err := <-errc:
+			return err
+		case <-toSigInt.C:
+			cmd.Process.Signal(os.Interrupt)
+		case <-toSigKill.C:
+			cmd.Process.Signal(os.Kill)
+		}
+	}
 }
 
 func gspreadMainPlotter(rrdfile, bin, spreadsheet, auth string) mainPlotter {

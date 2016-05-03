@@ -170,7 +170,6 @@ func (p *profilePlot) Fetch(c *api.Client) error {
 	for i := range caprate["y"] {
 		caprate["y"][i] *= 600
 	}
-	// Exclude outliers
 	p.caprate_x = caprate["x"]
 	p.caprate_y = caprate["y"]
 
