@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"time"
@@ -9,34 +10,43 @@ import (
 	"github.com/bitcoinfees/feesim/api"
 )
 
-func gspreadPutSheet(csv []byte, bin, spreadsheet, worksheet, auth string) error {
-	cmd := exec.Command(bin, spreadsheet, worksheet, auth)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
+func gspreadPutSheet(csv []byte, bin, spreadsheet, worksheet, auth string) (err error) {
+	const numtries = 3
+	var stdin io.WriteCloser
 
-	go func() {
-		stdin.Write(csv)
-		stdin.Close()
-	}()
+	for i := 0; i < numtries; i++ {
+		cmd := exec.Command(bin, spreadsheet, worksheet, auth)
+		stdin, err = cmd.StdinPipe()
+		if err != nil {
+			continue
+		}
 
-	errc := make(chan error)
-	go func() { errc <- cmd.Run() }()
-	toSigInt := time.NewTimer(time.Minute * 2)
-	toSigKill := time.NewTimer(time.Minute * 3)
-	defer toSigInt.Stop()
-	defer toSigKill.Stop()
-	for {
-		select {
-		case err := <-errc:
-			return err
-		case <-toSigInt.C:
-			cmd.Process.Signal(os.Interrupt)
-		case <-toSigKill.C:
-			cmd.Process.Signal(os.Kill)
+		go func() {
+			stdin.Write(csv)
+			stdin.Close()
+		}()
+
+		errc := make(chan error)
+		go func() { errc <- cmd.Run() }()
+		toSigInt := time.NewTimer(time.Minute * 2)
+		toSigKill := time.NewTimer(time.Minute * 3)
+		for {
+			select {
+			case err = <-errc:
+				toSigInt.Stop()
+				toSigKill.Stop()
+				if err == nil {
+					return
+				}
+				continue
+			case <-toSigInt.C:
+				cmd.Process.Signal(os.Interrupt)
+			case <-toSigKill.C:
+				cmd.Process.Signal(os.Kill)
+			}
 		}
 	}
+	return
 }
 
 func gspreadMainPlotter(rrdfile, bin, spreadsheet, auth string) mainPlotter {
