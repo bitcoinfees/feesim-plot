@@ -14,6 +14,7 @@ func gspreadPutSheet(csv []byte, bin, spreadsheet, worksheet, auth string) (err 
 	const numtries = 3
 	var stdin io.WriteCloser
 
+Retry:
 	for i := 0; i < numtries; i++ {
 		cmd := exec.Command(bin, spreadsheet, worksheet, auth)
 		stdin, err = cmd.StdinPipe()
@@ -38,7 +39,7 @@ func gspreadPutSheet(csv []byte, bin, spreadsheet, worksheet, auth string) (err 
 				if err == nil {
 					return
 				}
-				continue
+				continue Retry
 			case <-toSigInt.C:
 				cmd.Process.Signal(os.Interrupt)
 			case <-toSigKill.C:
