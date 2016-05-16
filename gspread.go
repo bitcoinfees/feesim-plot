@@ -14,7 +14,6 @@ func gspreadPutSheet(csv []byte, bin, spreadsheet, worksheet, auth string) (err 
 	const numtries = 3
 	var stdin io.WriteCloser
 
-Retry:
 	for i := 0; i < numtries; i++ {
 		cmd := exec.Command(bin, spreadsheet, worksheet, auth)
 		stdin, err = cmd.StdinPipe()
@@ -31,20 +30,21 @@ Retry:
 		go func() { errc <- cmd.Run() }()
 		toSigInt := time.NewTimer(time.Minute * 2)
 		toSigKill := time.NewTimer(time.Minute * 3)
-		for {
-			select {
-			case err = <-errc:
-				toSigInt.Stop()
-				toSigKill.Stop()
-				if err == nil {
-					return
-				}
-				continue Retry
-			case <-toSigInt.C:
-				cmd.Process.Signal(os.Interrupt)
-			case <-toSigKill.C:
-				cmd.Process.Signal(os.Kill)
+
+	WaitErr:
+		select {
+		case err = <-errc:
+			toSigInt.Stop()
+			toSigKill.Stop()
+			if err == nil {
+				return
 			}
+		case <-toSigInt.C:
+			cmd.Process.Signal(os.Interrupt)
+			goto WaitErr
+		case <-toSigKill.C:
+			cmd.Process.Signal(os.Kill)
+			goto WaitErr
 		}
 	}
 	return
