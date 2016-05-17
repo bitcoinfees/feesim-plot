@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"time"
@@ -12,11 +13,18 @@ import (
 
 func gspreadPutSheet(csv []byte, bin, spreadsheet, worksheet, auth string) (err error) {
 	const numtries = 3
-	var stdin io.WriteCloser
+	var (
+		stdin  io.WriteCloser
+		stderr io.ReadCloser
+	)
 
 	for i := 0; i < numtries; i++ {
 		cmd := exec.Command(bin, spreadsheet, worksheet, auth)
 		stdin, err = cmd.StdinPipe()
+		if err != nil {
+			continue
+		}
+		stderr, err = cmd.StderrPipe()
 		if err != nil {
 			continue
 		}
@@ -26,8 +34,15 @@ func gspreadPutSheet(csv []byte, bin, spreadsheet, worksheet, auth string) (err 
 			stdin.Close()
 		}()
 
+		sec := make(chan []byte)
+		go func() {
+			b, _ := ioutil.ReadAll(stderr)
+			sec <- b
+		}()
+
 		errc := make(chan error)
 		go func() { errc <- cmd.Run() }()
+
 		toSigInt := time.NewTimer(time.Minute * 2)
 		toSigKill := time.NewTimer(time.Minute * 3)
 
@@ -36,9 +51,11 @@ func gspreadPutSheet(csv []byte, bin, spreadsheet, worksheet, auth string) (err 
 		case err = <-errc:
 			toSigInt.Stop()
 			toSigKill.Stop()
+			se := <-sec
 			if err == nil {
 				return
 			}
+			err = fmt.Errorf("%v: %s", err, string(se))
 		case <-toSigInt.C:
 			cmd.Process.Signal(os.Interrupt)
 			goto WaitErr
