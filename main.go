@@ -22,7 +22,10 @@ const (
 	res1440
 )
 
-const coin = 100000000
+const (
+	coin    = 100000000
+	version = "0.1.0"
+)
 
 type mainPlotter func(resnum int) error
 
@@ -56,6 +59,12 @@ func main() {
 	flag.StringVar(&auth, "a", "", "path to gspread json auth token")
 	flag.StringVar(&logfile, "l", "", "path to logfile")
 	flag.Parse()
+
+	if flag.Arg(0) == "version" {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+
 	if bin == "" || spreadsheet == "" || auth == "" {
 		fmt.Fprintf(os.Stderr, usage)
 		flag.CommandLine.PrintDefaults()
