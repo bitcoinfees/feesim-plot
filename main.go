@@ -24,7 +24,7 @@ const (
 
 const (
 	coin    = 100000000
-	version = "0.1.0"
+	version = "0.1.1"
 )
 
 type mainPlotter func(resnum int) error
