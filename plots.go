@@ -81,7 +81,7 @@ func (p *miningPlot) Fetch(c *api.Client, mfrCutoffProb float64) error {
 	}
 	mfr_y := make([]float64, len(mfr_x))
 	for i := range mfr_y {
-		mfr_y[i] = float64(i) / float64(mfrLen)
+		mfr_y[i] = float64(i+1) / float64(mfrLen)
 	}
 	if i := sort.SearchFloat64s(mfr_y, mfrCutoffProb); i < len(mfr_y) {
 		mfr_x = mfr_x[:i]
