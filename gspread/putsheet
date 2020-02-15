@@ -10,7 +10,9 @@ import sys
 import json
 
 import gspread
-from oauth2client.client import SignedJwtAssertionCredentials
+from oauth2client.service_account import ServiceAccountCredentials
+
+scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
 
 try:
     spreadsheet_name, worksheet_name, authfile = sys.argv[1:4]
@@ -21,17 +23,14 @@ except ValueError:
 with open(authfile, "r") as f:
     auth = json.load(f)
 
-credentials = SignedJwtAssertionCredentials(
-    auth["client_email"],
-    auth["private_key"],
-    ['https://spreadsheets.google.com/feeds'])
+credentials = ServiceAccountCredentials.from_json_keyfile_name(authfile, scope)
 spreadsheet = gspread.authorize(credentials).open(spreadsheet_name)
 worksheet = spreadsheet.worksheet(worksheet_name)
 
 table = [line.rstrip("\n").split(",") for line in sys.stdin]
 nrows, ncols = len(table), len(table[0])
 worksheet.resize(rows=nrows, cols=ncols)
-endcell = worksheet.get_addr_int(nrows, ncols)
+endcell = gspread.utils.rowcol_to_a1(nrows, ncols)
 cell_list = worksheet.range("A1:" + endcell)
 table_list = [cell for row in table for cell in row]
 
